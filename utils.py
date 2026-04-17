@@ -187,3 +187,27 @@ def get_district_by_coords(lon, lat, api_key):
         return None
     except (IndexError, KeyError):
         return None
+
+
+def get_coordinates_full(address, api_key):
+    """
+    Получает координаты и полный объект GeoObject по адресу
+    """
+    url = "https://geocode-maps.yandex.ru/1.x/"
+    params = {
+        'apikey': api_key,
+        "geocode": address,
+        "format": "json"
+    }
+
+    response = requests.get(url, params=params)
+    json_data = response.json()
+
+    try:
+        feature = json_data["response"]["GeoObjectCollection"]["featureMember"][0]
+        toponym = feature["GeoObject"]
+        point = toponym["Point"]["pos"]
+        lon, lat = map(float, point.split())
+        return (lon, lat), toponym
+    except (IndexError, KeyError):
+        return None, None
