@@ -1,4 +1,5 @@
-from PyQt6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QLabel
+from PyQt6.QtWidgets import (QMainWindow, QVBoxLayout, QWidget,
+                             QLabel, QComboBox, QHBoxLayout)
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtGui import QPixmap
@@ -16,11 +17,26 @@ class MainWindow(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
-        layout = QVBoxLayout(central_widget)
+        main_layout = QVBoxLayout(central_widget)
+
+        top_layout = QHBoxLayout()
+
+        theme_label = QLabel("Тема карты:")
+        top_layout.addWidget(theme_label)
+
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(["Светлая", "Тёмная"])
+        self.theme_combo.currentTextChanged.connect(self.change_theme)
+        self.theme_combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        top_layout.addWidget(self.theme_combo)
+
+        top_layout.addStretch()
+
+        main_layout.addLayout(top_layout)
 
         self.map_label = QLabel()
         self.map_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.map_label)
+        main_layout.addWidget(self.map_label)
 
         self.lon = 37.6
         self.lat = 55.75
@@ -34,6 +50,7 @@ class MainWindow(QMainWindow):
         self.MIN_SPN = 0.001
         self.MAX_SPN = 50.0
         self.current_spn = (None, None)
+        self.current_theme = "light"
 
         self.MIN_LON = -180.0
         self.MAX_LON = 180.0
@@ -43,18 +60,34 @@ class MainWindow(QMainWindow):
         self.update_spn_from_zoom()
         self.show_map()
 
+    def change_theme(self, theme_name: str):
+        if theme_name == "Светлая":
+            self.current_theme = "light"
+        else:
+            self.current_theme = "dark"
+
+        self.get_cached_map.cache_clear()
+
+        self.show_map()
+
     def update_spn_from_zoom(self):
         t = self.zoom_level / self.MAX_ZOOM
         spn_value = self.MAX_SPN * (self.MIN_SPN / self.MAX_SPN) ** t
         self.current_spn = (spn_value, spn_value)
 
     @lru_cache(maxsize=30)
-    def get_cached_map(self, lon, lat, spn_lon, spn_lat, zoom_level):
+    def get_cached_map(self, lon, lat, spn_lon, spn_lat, zoom_level, theme):
         url = "https://static-maps.yandex.ru/1.x/"
+
+        if theme == "light":
+            theme = "map"
+        else:
+            theme = "sat"
+
         params = {
             'll': f'{lon},{lat}',
             'spn': f'{spn_lon},{spn_lat}',
-            'l': 'map',
+            'l': theme,
             'size': '650,450'
         }
         try:
@@ -108,7 +141,11 @@ class MainWindow(QMainWindow):
         if self.is_loading:
             return
 
-        cached_data = self.get_cached_map(self.lon, self.lat, self.current_spn[0], self.current_spn[1], self.zoom_level)
+        cached_data = self.get_cached_map(
+            self.lon, self.lat,
+            self.current_spn[0], self.current_spn[1],
+            self.zoom_level, self.current_theme
+        )
 
         if cached_data:
             pixmap = QPixmap()
