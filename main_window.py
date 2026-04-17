@@ -35,6 +35,11 @@ class MainWindow(QMainWindow):
         self.MAX_SPN = 50.0
         self.current_spn = (None, None)
 
+        self.MIN_LON = -180.0
+        self.MAX_LON = 180.0
+        self.MIN_LAT = -90.0
+        self.MAX_LAT = 90.0
+
         self.update_spn_from_zoom()
         self.show_map()
 
@@ -75,6 +80,30 @@ class MainWindow(QMainWindow):
                 self.update_spn_from_zoom()
                 self.show_map()
 
+        elif event.key() == Qt.Key.Key_Up:
+            shift = self.current_spn[1] * 0.8
+            self.lat = min(self.MAX_LAT - self.current_spn[1] * 0.5, self.lat + shift)
+            self.show_map()
+
+        elif event.key() == Qt.Key.Key_Down:
+            shift = self.current_spn[1] * 0.8
+            self.lat = max(self.MIN_LAT + self.current_spn[1] * 0.5, self.lat - shift)
+            self.show_map()
+
+        elif event.key() == Qt.Key.Key_Left:
+            shift = self.current_spn[0] * 0.8
+            self.lon = self.lon - shift
+            if self.lon < -180:
+                self.lon += 360
+            self.show_map()
+
+        elif event.key() == Qt.Key.Key_Right:
+            shift = self.current_spn[0] * 0.8
+            self.lon = self.lon + shift
+            if self.lon > 180:
+                self.lon -= 360
+            self.show_map()
+
     def show_map(self):
         if self.is_loading:
             return
@@ -85,7 +114,9 @@ class MainWindow(QMainWindow):
             pixmap = QPixmap()
             pixmap.loadFromData(BytesIO(cached_data).getvalue())
             self.map_label.setPixmap(pixmap.scaled(650, 450, Qt.AspectRatioMode.KeepAspectRatio))
-            self.setWindowTitle(f"Карта - Зум: {self.zoom_level}/{self.MAX_ZOOM} (spn: {self.current_spn[0]:.3f})")
+            self.setWindowTitle(f"Карта - Зум: {self.zoom_level}/{self.MAX_ZOOM} | "
+                                f"Координаты: {self.lon:.3f}, {self.lat:.3f} | "
+                                f"spn: {self.current_spn[0]:.3f}")
             return
         else:
             print("Ошибка загрузки")
