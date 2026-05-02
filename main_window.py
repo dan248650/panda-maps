@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (QMainWindow, QVBoxLayout, QWidget,
                              QLabel, QComboBox, QHBoxLayout, QLineEdit,
                              QPushButton, QTabWidget, QListWidget,
-                             QListWidgetItem, QMessageBox)
+                             QListWidgetItem, QMessageBox, QCheckBox)
 from PyQt6.QtCore import Qt, QEvent, QTimer
 from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtGui import QPixmap
@@ -85,6 +85,11 @@ class MainWindow(QMainWindow):
 
         right_markers_layout.addSpacing(20)
 
+        self.postal_checkbox = QCheckBox("Показывать почтовый индекс")
+        self.postal_checkbox.stateChanged.connect(self.on_postal_code_toggled)
+
+        right_markers_layout.addWidget(self.postal_checkbox)
+
         self.show_on_map_btn = QPushButton("Показать на карте")
         self.show_on_map_btn.clicked.connect(self.show_selected_marker)
         right_markers_layout.addWidget(self.show_on_map_btn)
@@ -130,10 +135,17 @@ class MainWindow(QMainWindow):
         self.update_spn_from_zoom()
         self.show_map()
 
+    def on_postal_code_toggled(self):
+        self.update_markers_list()
+        current_item = self.markers_list.currentItem()
+        if current_item:
+            self.on_marker_selected(current_item)
+
     def on_marker_selected(self, item):
         marker = item.data(Qt.ItemDataRole.UserRole)
         if marker:
-            self.marker_info_label.setText(f"Адрес: {marker['address']}\n\n"
+            display_addr = self.get_display_address(marker)
+            self.marker_info_label.setText(f"Адрес: {display_addr}\n\n"
                                            f"Координаты:\n"
                                            f"lon: {marker['coords'][0]:.6f}\n"
                                            f"lat: {marker['coords'][1]:.6f}")
@@ -141,13 +153,15 @@ class MainWindow(QMainWindow):
     def update_markers_list(self):
         self.markers_list.clear()
         for i, marker in enumerate(self.markers):
-            item = QListWidgetItem(f"{i + 1}. {marker['address']}")
+            display_addr = self.get_display_address(marker)
+            item = QListWidgetItem(f"{i + 1}. {display_addr}")
             item.setData(Qt.ItemDataRole.UserRole, marker)
             self.markers_list.addItem(item)
 
-    def add_marker(self, address, coords):
+    def add_marker(self, address_short, coords, postal_code=None):
         marker = {
-            "address": address,
+            "base_address": address_short,
+            "postal_code": postal_code,
             "coords": coords
         }
         self.markers.append(marker)
@@ -169,7 +183,7 @@ class MainWindow(QMainWindow):
         if current_row >= 0:
             marker = self.markers[current_row]
             reply = QMessageBox.question(self, "Подтверждение",
-                                         f"Удалить метку '{marker['address']}'?",
+                                         f"Удалить метку '{marker['base_address']}'?",
                                          QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             if reply == QMessageBox.StandardButton.Yes:
                 self.markers.pop(current_row)
@@ -203,7 +217,13 @@ class MainWindow(QMainWindow):
             except:
                 full_address = query
 
-            self.add_marker(full_address, coords)
+            postal_code = None
+            try:
+                postal_code = toponym["metaDataProperty"]["GeocoderMetaData"]["Address"]["postal_code"]
+            except (KeyError, TypeError):
+                pass
+
+            self.add_marker(full_address, coords, postal_code)
 
             self.lon, self.lat = coords
 
@@ -219,6 +239,12 @@ class MainWindow(QMainWindow):
         else:
             self.map_label.setText(f"Объект '{query}' не найден")
             QTimer.singleShot(2000, lambda: self.show_map() if not self.is_loading else None)
+
+    def get_display_address(self, marker):
+        addr = marker["base_address"]
+        if self.postal_checkbox.isChecked() and marker.get("postal_code"):
+            addr = f"{marker['postal_code']}, {addr}"
+        return addr
 
     def convert_spn_to_zoom(self, spn_value):
         if spn_value <= 0:
@@ -282,32 +308,40 @@ class MainWindow(QMainWindow):
                 self.zoom_level = new_zoom
                 self.update_spn_from_zoom()
                 self.show_map()
+            event.accept()
         elif event.key() == Qt.Key.Key_PageDown:
             new_zoom = max(self.MIN_ZOOM, self.zoom_level - self.ZOOM_STEP)
             if new_zoom != self.zoom_level:
                 self.zoom_level = new_zoom
                 self.update_spn_from_zoom()
                 self.show_map()
+            event.accept()
         elif event.key() == Qt.Key.Key_Up:
             shift = self.current_spn[1] * 0.8
             self.lat = min(self.MAX_LAT - self.current_spn[1] * 0.5, self.lat + shift)
             self.show_map()
+            event.accept()
         elif event.key() == Qt.Key.Key_Down:
             shift = self.current_spn[1] * 0.8
             self.lat = max(self.MIN_LAT + self.current_spn[1] * 0.5, self.lat - shift)
             self.show_map()
+            event.accept()
         elif event.key() == Qt.Key.Key_Left:
             shift = self.current_spn[0] * 0.8
             self.lon = self.lon - shift
             if self.lon < -180:
                 self.lon += 360
             self.show_map()
+            event.accept()
         elif event.key() == Qt.Key.Key_Right:
             shift = self.current_spn[0] * 0.8
             self.lon = self.lon + shift
             if self.lon > 180:
                 self.lon -= 360
             self.show_map()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
 
     def show_map(self):
         if self.is_loading:
