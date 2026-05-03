@@ -8,12 +8,14 @@ from PyQt6.QtGui import QPixmap
 import requests
 from io import BytesIO
 from functools import lru_cache
-from utils import get_coordinates_full, get_spn
+from utils import get_coordinates_full, get_spn, get_address_by_coords
 import math
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
+        self.initialize = True
+
         super().__init__()
         self.setWindowTitle("Карта")
         self.setGeometry(100, 100, 850, 600)
@@ -63,6 +65,9 @@ class MainWindow(QMainWindow):
         self.map_label = QLabel()
         self.map_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         map_layout.addWidget(self.map_label)
+
+        self.map_label.setMouseTracking(True)
+        self.map_label.installEventFilter(self)
 
         self.tab_widget.addTab(map_tab, "Карта")
 
@@ -130,7 +135,11 @@ class MainWindow(QMainWindow):
         self.MIN_LAT = -90.0
         self.MAX_LAT = 90.0
 
+        self.map_bounds = None
+
         self.api_key = "8013b162-6b42-4997-9691-77b7074026e0"
+
+        self.initialize = False
 
         self.update_spn_from_zoom()
         self.show_map()
@@ -149,6 +158,42 @@ class MainWindow(QMainWindow):
                                            f"Координаты:\n"
                                            f"lon: {marker['coords'][0]:.6f}\n"
                                            f"lat: {marker['coords'][1]:.6f}")
+
+    def get_geo_coords_from_pixel(self, x, y):
+        pixmap = self.map_label.pixmap()
+        if not pixmap:
+            return None, None
+
+        label_w = self.map_label.width()
+        label_h = self.map_label.height()
+
+        img_w = pixmap.width()
+        img_h = pixmap.height()
+
+        scale = min(label_w / img_w, label_h / img_h)
+        scaled_w = int(img_w * scale)
+        scaled_h = int(img_h * scale)
+        offset_x = (label_w - scaled_w) // 2
+        offset_y = (label_h - scaled_h) // 2
+
+        if x < offset_x or x >= offset_x + scaled_w or y < offset_y or y >= offset_y + scaled_h:
+            return None, None
+
+        x_in_img = x - offset_x
+        y_in_img = y - offset_y
+
+        real_spn_lon = self.current_spn[0] * 4
+        real_spn_lat = real_spn_lon * 0.37
+
+        lon = self.lon - real_spn_lon / 2 + (x_in_img / scaled_w) * real_spn_lon
+        lat = self.lat + real_spn_lat / 2 - (y_in_img / scaled_h) * real_spn_lat
+
+        if lon > 180:
+            lon -= 360
+        elif lon < -180:
+            lon += 360
+
+        return lon, lat
 
     def update_markers_list(self):
         self.markers_list.clear()
@@ -192,6 +237,9 @@ class MainWindow(QMainWindow):
                 self.show_map()
 
     def eventFilter(self, obj, event):
+        if self.initialize:
+            return super().eventFilter(obj, event)
+
         if obj == self.search_input and event.type() == QEvent.Type.KeyPress:
             key = event.key()
             if key in [Qt.Key.Key_Left, Qt.Key.Key_Right,
@@ -199,6 +247,20 @@ class MainWindow(QMainWindow):
                        Qt.Key.Key_PageUp, Qt.Key.Key_PageDown]:
                 self.keyPressEvent(event)
                 return True
+        if obj == self.map_label and event.type() == QEvent.Type.MouseButtonPress:
+            x, y = event.position().x(), event.position().y()
+            coords = self.get_geo_coords_from_pixel(x, y)
+            if coords is None or coords[0] is None:
+                return True
+            lon, lat = coords
+            address, postal_code = get_address_by_coords(lon, lat, self.api_key)
+            if address:
+                self.add_marker(address, (lon, lat), postal_code)
+                self.show_map()
+                self.setWindowTitle(f"Карта - Добавлена метка по клику: {address}")
+            else:
+                QMessageBox.information(self, "Не найдено", "Не удалось определить адрес по этим координатам.")
+            return True
 
         return super().eventFilter(obj, event)
 
@@ -358,7 +420,7 @@ class MainWindow(QMainWindow):
         if cached_data:
             pixmap = QPixmap()
             pixmap.loadFromData(BytesIO(cached_data).getvalue())
-            self.map_label.setPixmap(pixmap.scaled(650, 450, Qt.AspectRatioMode.KeepAspectRatio))
+            self.map_label.setPixmap(pixmap)
             self.setWindowTitle(f"Карта - Зум: {self.zoom_level}/{self.MAX_ZOOM} | "
                                 f"Координаты: {self.lon:.3f}, {self.lat:.3f} | "
                                 f"spn: {self.current_spn[0]:.3f}")

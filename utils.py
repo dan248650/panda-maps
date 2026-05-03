@@ -211,3 +211,29 @@ def get_coordinates_full(address, api_key):
         return (lon, lat), toponym
     except (IndexError, KeyError):
         return None, None
+
+
+def get_address_by_coords(lon, lat, api_key):
+    """
+    Получает полный адрес и почтовый индекс по координатам
+    """
+    url = "https://geocode-maps.yandex.ru/1.x/"
+    params = {
+        'apikey': api_key,
+        'geocode': f"{lon},{lat}",
+        'format': 'json'
+    }
+    try:
+        response = requests.get(url, params=params, timeout=5)
+        data = response.json()
+        feature = data["response"]["GeoObjectCollection"]["featureMember"][0]
+        toponym = feature["GeoObject"]
+        address = toponym.get("metaDataProperty", {}).get("GeocoderMetaData", {}).get("text", None)
+        postal_code = None
+        try:
+            postal_code = toponym["metaDataProperty"]["GeocoderMetaData"]["Address"]["postal_code"]
+        except (KeyError, TypeError):
+            pass
+        return address, postal_code
+    except (IndexError, KeyError, requests.RequestException):
+        return None, None
