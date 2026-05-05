@@ -237,3 +237,41 @@ def get_address_by_coords(lon, lat, api_key):
         return address, postal_code
     except (IndexError, KeyError, requests.RequestException):
         return None, None
+
+
+def search_organization(lon, lat, api_key, query, radius=50):
+    """
+    Ищет ближайшую организацию в радиусе radius метров.
+    """
+    url = "https://search-maps.yandex.ru/v1/"
+    params = {
+        "apikey": api_key,
+        "lang": "ru_RU",
+        "text": query,
+        "ll": f"{lon},{lat}",
+        "type": "biz",
+        "results": 1
+    }
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        if response.status_code != 200:
+            return None
+        data = response.json()
+        features = data.get("features", [])
+        if not features:
+            return None
+        org = features[0]
+        props = org.get("properties", {}).get("CompanyMetaData", {})
+        name = props.get("name")
+        address = props.get("address")
+        coords = org.get("geometry", {}).get("coordinates")
+        if not (name and address and coords):
+            return None
+        org_lon, org_lat = coords
+        distance = lonlat_distance((lon, lat), (org_lon, org_lat))
+        print(distance)
+        if distance <= radius:
+            return name, address, org_lon, org_lat
+        return None
+    except Exception:
+        return None

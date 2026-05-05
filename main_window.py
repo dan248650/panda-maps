@@ -8,7 +8,7 @@ from PyQt6.QtGui import QPixmap
 import requests
 from io import BytesIO
 from functools import lru_cache
-from utils import get_coordinates_full, get_spn, get_address_by_coords
+from utils import get_coordinates_full, get_spn, get_address_by_coords, search_organization
 import math
 
 
@@ -68,6 +68,21 @@ class MainWindow(QMainWindow):
 
         self.map_label.setMouseTracking(True)
         self.map_label.installEventFilter(self)
+
+        self.org_info_label = QLabel("Информация об организации")
+        self.org_info_label.setWordWrap(True)
+        self.org_info_label.setStyleSheet("border: 1px solid gray; padding: 5px; margin-top: 5px;")
+        self.org_info_label.setMaximumHeight(80)
+        map_layout.addWidget(self.org_info_label)
+
+        org_search_layout = QHBoxLayout()
+        org_search_label = QLabel("Поиск:")
+        self.org_search_input = QLineEdit()
+        self.org_search_input.setPlaceholderText("аптека, кафе, банк...")
+        self.org_search_input.setText("бизнес")
+        org_search_layout.addWidget(org_search_label)
+        org_search_layout.addWidget(self.org_search_input)
+        map_layout.addLayout(org_search_layout)
 
         self.tab_widget.addTab(map_tab, "Карта")
 
@@ -253,14 +268,28 @@ class MainWindow(QMainWindow):
             if coords is None or coords[0] is None:
                 return True
             lon, lat = coords
-            address, postal_code = get_address_by_coords(lon, lat, self.api_key)
-            if address:
-                self.add_marker(address, (lon, lat), postal_code)
-                self.show_map()
-                self.setWindowTitle(f"Карта - Добавлена метка по клику: {address}")
-            else:
-                QMessageBox.information(self, "Не найдено", "Не удалось определить адрес по этим координатам.")
-            return True
+
+            if event.button() == Qt.MouseButton.LeftButton:
+                address, postal_code = get_address_by_coords(lon, lat, self.api_key)
+                if address:
+                    self.add_marker(address, (lon, lat), postal_code)
+                    self.show_map()
+                    self.setWindowTitle(f"Карта - Добавлена метка по клику: {address}")
+                else:
+                    QMessageBox.information(self, "Не найдено", "Не удалось определить адрес по этим координатам.")
+                return True
+
+            elif event.button() == Qt.MouseButton.RightButton:
+                search_text = self.org_search_input.text().strip()
+                if not search_text:
+                    search_text = "бизнес"
+                result = search_organization(lon, lat, "dda3ddba-c9ea-4ead-9010-f43fbc15c6e3", search_text, radius=50)
+                if result:
+                    name, address, org_lon, org_lat = result
+                    self.org_info_label.setText(f"{name}\n{address}")
+                else:
+                    self.org_info_label.setText("Организация в радиусе 50 м не найдена")
+                return True
 
         return super().eventFilter(obj, event)
 
